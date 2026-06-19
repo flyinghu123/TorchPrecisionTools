@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "torch-precision-tools"
+dynamic = ["version"]
+description = "torch precision tools"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "flyinghu", email = "1152598046@qq.com"},
+]
+urls = {Homepage = "https://github.com/flyinghu123/TorchPrecisionTools"}
+
+dependencies = [
+    "torch>=2.4"
+]
+
+[project.scripts]
+tpt-compare = "tpt.cli:compare"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[tool.setuptools]
+packages = {find = {}}
+include-package-data = true
+zip-safe = false
+
+[tool.setuptools.dynamic]
+version = {attr = "tpt.__version__"}
