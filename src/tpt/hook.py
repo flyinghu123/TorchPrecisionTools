@@ -4,8 +4,8 @@ import torch.nn as nn
 
 from functools import partial
 
-from .utils import process_dict_for_serialization, DataWriter, get_last_stack_no_torch
-from .config import is_enable_save, get_save_dir, get_tensor_sample_size
+from tpt.utils import process_dict_for_serialization, DataWriter, get_last_stack_no_torch
+from tpt.config import is_enable_save, get_save_dir, get_tensor_sample_size
 
 
 if is_enable_save():
@@ -66,12 +66,13 @@ class AutoHookMeta(type):
                 prefix = f'{self.__class__.__name__}'
                 # 第二步：在初始化完成后，执行全自动 Hook 注册逻辑
                 for module_name, module in self.named_modules():
+                    module_prefix = f'{prefix}.{module_name}' if module_name else f'{prefix}'
                     # 注册前向 Hook
                     module.register_forward_hook(
-                        partial(forward_hook, f'{prefix}.{module_name}'), with_kwargs=True
+                        partial(forward_hook, f'{module_prefix}.forward'), with_kwargs=True
                     )
                     module.register_full_backward_hook(
-                        partial(full_backward_hook, f'{prefix}.{module_name}')
+                        partial(full_backward_hook, f'{module_prefix}.backward')
                     )
             mcs.depth -= 1
         

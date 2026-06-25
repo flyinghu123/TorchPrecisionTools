@@ -15,7 +15,8 @@ authors = [
 urls = {Homepage = "https://github.com/flyinghu123/TorchPrecisionTools"}
 
 dependencies = [
-    "torch>=2.4"
+    "torch>=2.4",
+    "loguru>=0.7.3"
 ]
 
 [project.scripts]
@@ -27,7 +28,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = {find = {}}
+packages = {find = {where = ["src/"]}}
 include-package-data = true
 zip-safe = false
 
