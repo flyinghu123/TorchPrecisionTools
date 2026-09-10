@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "torch-precision-debugger"
+version = "0.1.0"
+description = "Precision issue locator for PyTorch training frameworks"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=1.12.0",
+    "numpy",
+]
+
+[project.scripts]
+tpd = "tpd.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tpd*"]
