@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# 测试与工具产物
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 探针采集结果（PPROBE_OUT 的默认目录名 / 临时验证目录）
+pprobe_out/
+pprobe_cmp/
+pprobe_selftest/
+.pprobe_selftest/
+runs/
+_scratch/
+*.pt.tmp
+
+# 本地调试脚本与临时输出
+.dev/
+
+# Qoder：只跟踪项目级 skill，其余是客户端缓存
+.qoder/*
+!.qoder/skills/
+
+# 编辑器与系统
+.idea/
+.vscode/
+.DS_Store
