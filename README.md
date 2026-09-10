@@ -13,6 +13,8 @@
 - **信号处理**: 捕获 SIGINT/SIGTERM 等信号，优雅退出并保存数据
 - **多卡支持**: 支持分布式训练，按 rank 分别存储和对比
 - **对比工具**: 提供 CLI 命令对比两次运行的结果，定位精度差异
+- **结果查询**: 提供强大的 `cmp` 子命令系统，高效查询比较结果
+- **问题定位**: 自动检测 NaN/Inf、大差异、shape 不匹配等问题
 - **堆栈查询**: 提供 CLI 命令通过 ID 查询完整堆栈
 
 ## 安装
@@ -120,7 +122,136 @@ tpd compare ./results_run1 ./results_run2 \
   - 数值统计差异（max、min、mean、var、nan_count、inf_count）
   - 采样值差异
 
-### 6. 查询堆栈追踪
+### 6. 查询比较结果（cmp 子命令）
+
+TPD 提供了一套强大的 `cmp` 子命令系统，用于高效查询和探索比较结果，避免加载整个 JSON 文件浪费上下文。
+
+#### 6.1 查看概览
+
+```bash
+# 显示比较结果概览（含问题分类统计）
+tpd cmp summary comparison.json
+```
+
+输出示例：
+
+```
+=================================================================
+  TPD Comparison Summary
+=================================================================
+  Dir1:                     ./results_run1
+  Dir2:                     ./results_run2
+  Rank:                     0
+  Tolerance:                1e-06
+  Total entries dir1:       92
+  Total entries dir2:       92
+  Common entries:           92
+  Entries with differences: 92
+-----------------------------------------------------------------
+  NaN/Inf issues:           1
+  Large diff issues:        26
+  Shape mismatch issues:    0
+=================================================================
+```
+
+#### 6.2 定位首次出现的问题
+
+```bash
+# 查找首次出现 NaN/Inf 的位置（默认窗口大小 3）
+tpd cmp first comparison.json --type naninf --window 3
+
+# 查找首次出现大差异的位置（阈值可调）
+tpd cmp first comparison.json --type large-diff --threshold 0.5 --window 2
+
+# 查找首次出现 shape 不匹配的位置
+tpd cmp first comparison.json --type shape
+```
+
+该命令会：
+- 按 step 顺序找到首次出现该问题的条目
+- 显示触发该问题的具体 diff 信息
+- 显示前后窗口范围内的上下文条目
+
+#### 6.3 列出所有差异条目
+
+```bash
+# 列出所有差异条目（按 step 排序）
+tpd cmp list comparison.json --sort step
+
+# 只列出 NaN/Inf 问题
+tpd cmp list comparison.json --type naninf
+
+# 只列出大差异问题（阈值 1.0）
+tpd cmp list comparison.json --type large-diff --threshold 1.0
+
+# 只列出 shape 不匹配问题
+tpd cmp list comparison.json --type shape
+```
+
+输出示例：
+
+```
+  Idx    Step   Type                   Issues   Module / Tensor
+  ----------------------------------------------------------------------------------------------------
+  0      1      backward_grad_output   7        __main__.SimpleModel [grad_output[0]]
+  1      1      forward_input          7        __main__.SimpleModel [args[0]]
+  2      2      backward_grad_input    6        torch.nn.modules.normalization.LayerNorm [grad_input[0]]
+  ...
+```
+
+#### 6.4 查看指定条目详情
+
+```bash
+# 查看索引 5 的条目详情
+tpd cmp show comparison.json 5
+
+# 查看索引 5 的条目，前后各显示 2 个上下文条目
+tpd cmp show comparison.json 5 --window 2
+
+# 查看索引 5~10 范围的条目
+tpd cmp show comparison.json 5-10
+```
+
+#### 6.5 统计差异条目
+
+```bash
+# 统计所有差异条目（按问题类型和 hook_type 分类）
+tpd cmp count comparison.json
+
+# 只统计 NaN/Inf 问题
+tpd cmp count comparison.json --type naninf
+
+# 统计大差异问题（阈值可调）
+tpd cmp count comparison.json --type large-diff --threshold 0.5
+```
+
+输出示例：
+
+```
+==================================================
+  Diff Count Summary
+==================================================
+  Total entries with diffs: 92
+  |-- NaN/Inf issues:       1
+  |-- Large diff issues:    26  (>= 1.0)
+  +-- Shape mismatches:     0
+
+  By hook type:
+    forward_input: 28
+    forward_output: 28
+    backward_grad_output: 24
+    backward_grad_input: 12
+```
+
+#### 6.6 问题类型说明
+
+`cmp` 命令支持三种问题类型过滤：
+
+- **`naninf`**: NaN/Inf 问题（`nan_count` 或 `inf_count` 在两次运行间出现差异）
+- **`large-diff`**: 大数值差异（`abs_diff` 超过阈值，默认 1.0）
+- **`shape`**: Shape 不匹配（shape、stride、numel、dtype、device 等元信息不一致）
+
+### 7. 查询堆栈追踪
 
 ```bash
 # 通过堆栈 ID 查询完整堆栈
