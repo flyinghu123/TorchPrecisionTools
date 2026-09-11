@@ -13,6 +13,7 @@
 - **信号处理**: 捕获 SIGINT/SIGTERM 等信号，优雅退出并保存数据
 - **多卡支持**: 支持分布式训练，按 rank 分别存储和对比
 - **对比工具**: 提供 CLI 命令对比两次运行的结果，定位精度差异
+- **总结报告**: 提供 `report` 命令一键生成全面的总结报告，快速了解问题全貌
 - **结果查询**: 提供强大的 `cmp` 子命令系统，高效查询比较结果
 - **问题定位**: 自动检测 NaN/Inf、大差异、shape 不匹配等问题
 - **堆栈查询**: 提供 CLI 命令通过 ID 查询完整堆栈
@@ -122,11 +123,108 @@ tpd compare ./results_run1 ./results_run2 \
   - 数值统计差异（max、min、mean、var、nan_count、inf_count）
   - 采样值差异
 
-### 6. 查询比较结果（cmp 子命令）
+### 6. 生成总结报告
+
+对比完成后，先生成一份全面的总结报告，快速了解问题全貌：
+
+```bash
+# 生成总结报告（默认输出到 comparison.report.txt）
+tpd report comparison.json
+
+# 指定输出文件
+tpd report comparison.json -o my_report.txt
+
+# 调整大差异阈值
+tpd report comparison.json --threshold 0.5
+```
+
+**报告内容包括**：
+
+1. **概览**：对比基本信息和统计
+2. **问题统计**：NaN/Inf、大差异、Shape 不匹配的数量和严重程度
+3. **首次出现位置**：各类问题首次出现的 step、module、tensor
+4. **关键问题**：所有 NaN/Inf 问题详情
+5. **Top 10 最大差异**：差异最大的条目排名
+6. **Shape 不匹配**：所有 shape 问题详情
+7. **Hook 类型分布**：问题在不同 hook 类型的分布
+8. **排查建议**：根据问题类型给出针对性建议
+
+**报告示例**：
+
+```
+================================================================================
+  TPD Precision Debug Report
+================================================================================
+  Generated: 2026-09-11 14:30:00
+  Source:    comparison.json
+
+────────────────────────────────────────────────────────────────────────────────
+  1. Overview
+────────────────────────────────────────────────────────────────────────────────
+  Dir1:                     ./results_run1
+  Dir2:                     ./results_run2
+  Rank:                     0
+  Tolerance:                1e-06
+  Total entries dir1:       92
+  Total entries dir2:       92
+  Common entries:           92
+  Entries with differences: 92
+
+────────────────────────────────────────────────────────────────────────────────
+  2. Issue Statistics
+────────────────────────────────────────────────────────────────────────────────
+  Total entries with differences: 92
+  ├── NaN/Inf issues:             1  ⚠️  CRITICAL
+  ├── Large diff issues:          26  (threshold: 1.0)
+  └── Shape mismatches:           0  ✓
+
+  Overall Severity: HIGH
+
+────────────────────────────────────────────────────────────────────────────────
+  3. First Occurrences (by step)
+────────────────────────────────────────────────────────────────────────────────
+  First NaN/Inf Issue:
+    Index:     87
+    Step:      27
+    Hook Type: forward_input
+    Module:    torch.nn.modules.linear.Linear
+    Tensor:    args[0]
+    Stack ID:  S000012_88808c57116f
+
+  First Large Diff Issue:
+    Index:     0
+    Step:      1
+    Hook Type: backward_grad_output
+    Module:    __main__.SimpleModel
+    Tensor:    grad_output[0]
+    Max Diff:  8.991413e-02
+    Stack ID:  S000005_a36a855ab094
+
+...
+```
+
+**使用流程**：
+
+```bash
+# 1. 对比结果
+tpd compare ./run1 ./run2 -o comparison.json
+
+# 2. 生成报告（先看全貌）
+tpd report comparison.json
+
+# 3. 查看报告
+cat comparison.report.txt
+
+# 4. 根据报告中的索引，使用 cmp 命令细查
+tpd cmp show comparison.json 87 --window 3
+tpd cmp first comparison.json --type naninf --window 3
+```
+
+### 7. 查询比较结果（cmp 子命令）
 
 TPD 提供了一套强大的 `cmp` 子命令系统，用于高效查询和探索比较结果，避免加载整个 JSON 文件浪费上下文。
 
-#### 6.1 查看概览
+#### 7.1 查看概览
 
 ```bash
 # 显示比较结果概览（含问题分类统计）
@@ -154,7 +252,7 @@ tpd cmp summary comparison.json
 =================================================================
 ```
 
-#### 6.2 定位首次出现的问题
+#### 7.2 定位首次出现的问题
 
 ```bash
 # 查找首次出现 NaN/Inf 的位置（默认窗口大小 3）
@@ -172,7 +270,7 @@ tpd cmp first comparison.json --type shape
 - 显示触发该问题的具体 diff 信息
 - 显示前后窗口范围内的上下文条目
 
-#### 6.3 列出所有差异条目
+#### 7.3 列出所有差异条目
 
 ```bash
 # 列出所有差异条目（按 step 排序）
@@ -199,7 +297,7 @@ tpd cmp list comparison.json --type shape
   ...
 ```
 
-#### 6.4 查看指定条目详情
+#### 7.4 查看指定条目详情
 
 ```bash
 # 查看索引 5 的条目详情
@@ -212,7 +310,7 @@ tpd cmp show comparison.json 5 --window 2
 tpd cmp show comparison.json 5-10
 ```
 
-#### 6.5 统计差异条目
+#### 7.5 统计差异条目
 
 ```bash
 # 统计所有差异条目（按问题类型和 hook_type 分类）
@@ -243,7 +341,7 @@ tpd cmp count comparison.json --type large-diff --threshold 0.5
     backward_grad_input: 12
 ```
 
-#### 6.6 问题类型说明
+#### 7.6 问题类型说明
 
 `cmp` 命令支持三种问题类型过滤：
 
@@ -251,7 +349,7 @@ tpd cmp count comparison.json --type large-diff --threshold 0.5
 - **`large-diff`**: 大数值差异（`abs_diff` 超过阈值，默认 1.0）
 - **`shape`**: Shape 不匹配（shape、stride、numel、dtype、device 等元信息不一致）
 
-### 7. 查询堆栈追踪
+### 8. 查询堆栈追踪
 
 ```bash
 # 通过堆栈 ID 查询完整堆栈

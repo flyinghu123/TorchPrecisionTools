@@ -276,6 +276,14 @@ def cmd_cmp_first(args):
     find_first(data, args.issue_type, args.window, args.threshold)
 
 
+def cmd_report(args):
+    """CLI command: generate summary report."""
+    from .report import generate_report
+    output = generate_report(args.comparison, args.output, args.threshold)
+    print(f"\n[TPD] Report saved to: {output}")
+    print(f"[TPD] You can view it with: cat {output}")
+
+
 def main():
     """Main entry point for CLI."""
     parser = argparse.ArgumentParser(
@@ -422,6 +430,25 @@ def main():
         help="Threshold for large-diff detection (default: 1.0)",
     )
     p_first.set_defaults(func=cmd_cmp_first)
+
+    # report command
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Generate comprehensive summary report from comparison results",
+    )
+    report_parser.add_argument("comparison", help="Path to comparison JSON file")
+    report_parser.add_argument(
+        "-o", "--output",
+        default=None,
+        help="Output report file path (default: <comparison>.report.txt)",
+    )
+    report_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=1.0,
+        help="Threshold for large-diff detection (default: 1.0)",
+    )
+    report_parser.set_defaults(func=cmd_report)
 
     args = parser.parse_args()
 

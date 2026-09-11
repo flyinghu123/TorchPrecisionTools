@@ -2,7 +2,7 @@
 
 ## 概述
 
-TPD (Torch Precision Debugger) 是一个用于定位 PyTorch 训练框架精度问题的辅助工具。通过自动 hook 所有 `nn.Module` 的 forward/backward，捕获张量数据并生成对比报告，帮助快速定位 NaN/Inf、数值偏差、shape 不匹配等问题。
+TPD (Torch Precision Debugger) 是一个用于定位 PyTorch 训练框架精度问题的辅助工具。通过自动 hook 所有 `nn.Module` 的 forward/backward，捕获张量数据，再通过 `tpd compare` 对比两次运行结果，并用 `tpd report` 一键生成总结报告（问题统计、首次出现位置、排查建议），帮助快速定位 NaN/Inf、数值偏差、shape 不匹配等问题。
 
 ## 适用场景
 
@@ -70,11 +70,86 @@ tpd compare ./results_baseline ./results_problem \
 - 数值统计：max、min、mean、var、nan_count、inf_count
 - 采样值：逐个对比采样元素的差异
 
-### 第三步：查询和定位问题
+### 第三步：生成总结报告（重要！）
 
-使用 `tpd cmp` 子命令系统高效查询比较结果。
+**对比完成后，先生成一份全面的总结报告，快速了解问题全貌，再决定如何细查。**
 
-#### 3.1 查看概览
+```bash
+# 生成总结报告
+tpd report comparison.json
+
+# 默认输出到 comparison.report.txt
+# 也可以指定输出文件
+tpd report comparison.json -o my_report.txt
+
+# 调整大差异阈值
+tpd report comparison.json --threshold 0.5
+```
+
+**报告内容**：
+
+1. **概览**：对比基本信息和统计
+2. **问题统计**：NaN/Inf、大差异、Shape 不匹配的数量和严重程度
+3. **首次出现位置**：各类问题首次出现的 step、module、tensor（**最重要的信息**）
+4. **关键问题**：所有 NaN/Inf 问题详情
+5. **Top 10 最大差异**：差异最大的条目排名
+6. **Shape 不匹配**：所有 shape 问题详情
+7. **Hook 类型分布**：问题在不同 hook 类型的分布
+8. **排查建议**：根据问题类型给出针对性建议
+
+**报告示例**：
+
+```
+================================================================================
+  TPD Precision Debug Report
+================================================================================
+  Generated: 2026-09-11 14:30:00
+  Source:    comparison.json
+
+────────────────────────────────────────────────────────────────────────────────
+  2. Issue Statistics
+────────────────────────────────────────────────────────────────────────────────
+  Total entries with differences: 92
+  ├── NaN/Inf issues:             1  ⚠️  CRITICAL
+  ├── Large diff issues:          26  (threshold: 1.0)
+  └── Shape mismatches:           0  ✓
+
+  Overall Severity: HIGH
+
+────────────────────────────────────────────────────────────────────────────────
+  3. First Occurrences (by step)
+────────────────────────────────────────────────────────────────────────────────
+  First NaN/Inf Issue:
+    Index:     87
+    Step:      27
+    Hook Type: forward_input
+    Module:    torch.nn.modules.linear.Linear
+    Tensor:    args[0]
+    Stack ID:  S000012_88808c57116f
+
+  First Large Diff Issue:
+    Index:     0
+    Step:      1
+    Hook Type: backward_grad_output
+    Module:    __main__.SimpleModel
+    Tensor:    grad_output[0]
+    Max Diff:  8.991413e-02
+    Stack ID:  S000005_a36a855ab094
+```
+
+**为什么先生成报告？**
+
+- ✅ **快速了解全貌**：不需要逐个查询，一眼看出问题类型和严重程度
+- ✅ **定位首次出现**：报告直接给出各类问题的首次出现位置（step 最早）
+- ✅ **获取索引号**：报告中每个条目都有索引号，可直接用于 `cmp show` 命令
+- ✅ **针对性建议**：根据问题类型自动给出排查建议
+- ✅ **节省时间**：避免盲目查询，先看报告再精准定位
+
+### 第四步：查询和定位问题
+
+根据报告中的信息，使用 `tpd cmp` 子命令系统精准查询。
+
+#### 4.1 查看概览
 
 ```bash
 tpd cmp summary comparison.json
@@ -87,11 +162,15 @@ tpd cmp summary comparison.json
 - `Large diff issues`: 大数值差异数量（阈值默认 1.0）
 - `Shape mismatch issues`: Shape 不匹配数量（通常是 bug）
 
-#### 3.2 定位首次出现的问题
+#### 4.2 定位首次出现的问题
 
 **场景 A：出现 NaN/Inf**
 
 ```bash
+# 方法 1：查看报告中的首次出现位置（推荐）
+cat comparison.report.txt  # 查看 "3. First Occurrences" 部分
+
+# 方法 2：使用命令查找
 # 找到首次出现 NaN/Inf 的位置，查看前后 3 个条目的上下文
 tpd cmp first comparison.json --type naninf --window 3
 ```
@@ -115,7 +194,7 @@ tpd cmp first comparison.json --type large-diff --threshold 0.5 --window 2
 tpd cmp first comparison.json --type shape
 ```
 
-#### 3.3 列出特定类型的问题
+#### 4.3 列出特定类型的问题
 
 ```bash
 # 只列出 NaN/Inf 问题
@@ -144,7 +223,9 @@ Idx    Step   Type                   Issues   Module / Tensor
 - `Issues`: 该条目包含的差异数量
 - `Module / Tensor`: 模块名和张量路径
 
-#### 3.4 查看条目详情
+#### 4.4 查看条目详情
+
+根据报告中的索引号，直接查看指定条目：
 
 ```bash
 # 查看索引 5 的条目
@@ -182,7 +263,7 @@ tpd cmp show comparison.json 5-10
   - `[numerical_stat]`: 数值统计差异（max/min/mean/var/nan_count/inf_count）
   - `[sample_values]`: 采样值差异（显示具体哪些元素不同）
 
-#### 3.5 统计问题分布
+#### 4.5 统计问题分布
 
 ```bash
 # 总体统计
@@ -216,7 +297,7 @@ tpd cmp count comparison.json --type naninf
 - 如果 `forward_output` 问题多 → 可能是某层的前向计算有问题
 - 如果集中在某个模块 → 检查该模块的实现
 
-### 第四步：查询堆栈追踪
+### 第五步：查询堆栈追踪
 
 找到问题条目后，通过 Stack ID 查询完整调用栈：
 
@@ -435,19 +516,27 @@ python train.py --seed 42 --use-fp16
 # 4. 对比结果
 tpd compare ./baseline ./problem -o comparison.json --tolerance 1e-3
 
-# 5. 查看概览
-tpd cmp summary comparison.json
+# 5. 生成总结报告（重要！先看全貌）
+tpd report comparison.json
 
-# 6. 定位首次 NaN/Inf
+# 6. 查看报告
+cat comparison.report.txt
+# 重点关注：
+#   - "2. Issue Statistics" - 了解问题类型和数量
+#   - "3. First Occurrences" - 找到首次出现问题的位置
+#   - "4. Critical Issues" - 查看 NaN/Inf 详情
+#   - "5. Top 10 Largest Differences" - 查看最大差异
+
+# 7. 根据报告中的索引，细查问题条目
+tpd cmp show comparison.json 87 --window 3  # 查看报告中提到的索引 87
+
+# 8. 或使用 first 命令定位
 tpd cmp first comparison.json --type naninf --window 3
 
-# 7. 查看问题条目详情
-tpd cmp show comparison.json <idx> --window 2
+# 9. 查询堆栈追踪
+tpd stack ./problem S000012_88808c57116f
 
-# 8. 查询堆栈追踪
-tpd stack ./problem <stack_id>
-
-# 9. 根据堆栈定位到代码，修复问题！
+# 10. 根据堆栈定位到代码，修复问题！
 ```
 
 ## 故障排除
