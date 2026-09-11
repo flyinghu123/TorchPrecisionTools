@@ -378,4 +378,10 @@ tests/           单元 + 端到端（torchrun、子进程注入）
 | 5 | 限制总 forward/backward 次数 + 按间隔定期落盘 + 捕获中断/人为停止 | `PPROBE_MAX_EVENTS`/`MAX_STEPS`/`MAX_CALLS_PER_MODULE`；`recorder.py` 的缓冲 + 每 `FLUSH_INTERVAL` 条 `flush+fsync`（可加 `FLUSH_SECS`）+ SIGINT/SIGTERM/SIGHUP/SIGQUIT 链式转发 + `atexit` + 原子写 | `tests/test_recorder.py`、`tests/test_dist_e2e.py`（SIGTERM 后数据完整）、`test_hooks_e2e.py`（达到上限即停） |
 | 6 | 对比两 result 目录（采样值/summary/基本信息/堆栈），定位两次运行或两个平台的精度差异，输出到文件并记录差异与堆栈 id | `compare.py`（按 rank、按 `(phase, 模块, call_index)` 对齐）+ `render.py`（Markdown）；`compare` 默认把报告写到 B 目录旁的 `pprobe_compare_<A>_vs_<B>.md` 与同名 `.json` | `tests/test_compare.py`、`test_render.py`、`test_diff_localization.py`（CPU↔GPU、双运行差异定位） |
 | 7 | 通过堆栈 id + result 目录查完整堆栈 | `query.resolve_stacks` / `format_stack`；`pprobe stack s5 --result DIR --events`，`--module RE` 可反向查 id | `tests/test_cli.py::…stack…`；报告里每条差异都附了可直接执行的 stack 命令 |
-| 8 | 多卡分布式分 rank 存储，对比也分 rank | `distributed.py` 探 rank/world_size（`torch.distributed` 优先，回退 `RANK`/`LOCAL_RANK`）；`PPROBE_PER_RANK_DIR`、`PPROBE_ONLY_RANKS`；`compare` 逐 rank 配对并各自给出最早发散点 | `tests/test_dist_e2e.py`（真实 torchrun 2 进程）、`examples/ddp_simple.py --bad-rank`（见 5.2） |
+| 8 | 多卡分布式分 rank 存储，对比也分 rank | `distributed.py` 探 rank/world_size（`PPROBE_RANK` → `dist.get_rank()` → `RANK` → 0）；`PPROBE_PER_RANK_DIR`、`PPROBE_ONLY_RANKS`；`compare` 逐 rank 配对并各自给出最早发散点 | `tests/test_dist_e2e.py`（真实 torchrun 2 进程）、`examples/ddp_simple.py --bad-rank`（见 5.2） |
+
+---
+
+## 许可证
+
+MIT，见 [LICENSE](LICENSE)。

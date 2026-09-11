@@ -8,10 +8,11 @@ version = "0.1.0"
 description = "PyTorch 训练框架精度问题定位探针（forward/backward IO dump + 采样 + 堆栈 + 跨运行/跨平台对比）"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "Apache-2.0" }
+license = { text = "MIT" }
 authors = [{ name = "flyinghu" }]
 keywords = ["pytorch", "precision", "debug", "numerical", "training", "hook"]
 classifiers = [
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Debuggers",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
