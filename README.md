@@ -359,6 +359,32 @@ tpd stack ./results_run1 S000001_abc123def456
 tpd stack ./results_run1 S000001_abc123def456 --rank 0
 ```
 
+### 9. Megatron-LM demo：定位 deterministic 模式下的残留随机性
+
+`examples/megatron_qwen3_demo.{py,sh}` 提供了一个极小的 Qwen3 结构 demo（RMSNorm + RoPE + GQA +
+QK-LayerNorm + SwiGLU，约 1.3M 参数），在单张小显卡（实测 4GB GTX 1050 Ti）上跑通 Megatron-LM
+完整训练流程（无需 tokenizer 文件和数据集，`NullTokenizer` + `--mock-data` 全离线），并用 TPD
+定位 `--deterministic-mode` 开启后仍存在随机性的组件：
+
+```bash
+# 前置：克隆 Megatron-LM 到 ../Megatron-LM（必要时走代理）
+#       git -c http.proxy=http://127.0.0.1:7897 clone --depth 1 https://github.com/NVIDIA/Megatron-LM.git
+conda activate tpd   # 需已 pip install -e . 及 pybind11
+bash examples/megatron_qwen3_demo.sh
+```
+
+脚本会依次运行三组实验（约 2 分钟）：
+
+1. **deterministic ON，同 seed 两次运行**：TPD 对比后差异条目即为 deterministic 模式未能消除随机性的组件
+2. **deterministic OFF（对照组）**：验证当前硬件/配置在不开确定性模式时是否本身可复现
+3. **不同 seed（阳性对照）**：验证对比流程能检出真实差异（`--seed` 同时驱动 mock 数据采样顺序）
+
+在实测环境（单卡 fp32 + `--transformer-impl local`）下，实验 1 与 2 均为 1224 条记录零差异（bit-exact），
+实验 3 检出 1032 条差异并可定位首个差异（step 1 的 DDP 输入 tokens，即数据采样随机性）。
+
+> 注：Pascal 及更老 GPU（sm < 7.0）不支持 Triton，demo 通过 `TORCHDYNAMO_DISABLE=1` 绕过 Megatron 的
+> torch.compile JIT 预热，不影响 RNG 消费顺序与确定性对比。
+
 ## 输出文件格式
 
 ### JSONL 文件（rank0.jsonl）

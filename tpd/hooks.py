@@ -6,6 +6,7 @@ Hooks into PyTorch modules to capture forward/backward tensor data.
 import os
 import sys
 import weakref
+from functools import partial
 from typing import Any
 
 import torch
@@ -167,13 +168,30 @@ class HookEngine:
             }
             output_records.append(record)
 
+            # Register a per-tensor gradient hook so the backward pass records the
+            # gradient w.r.t. this output tensor. Tensor hooks avoid nn.Module's
+            # full backward hooks entirely: both register_full_backward_hook and
+            # register_full_backward_pre_hook wrap module inputs/outputs in a
+            # custom autograd Function (torch's _BackwardHook), which crashes on
+            # frameworks that edit tensors in-place during forward (e.g.
+            # Megatron's attention_mask_func applies masked_fill_ to the module
+            # input -- PyTorch forbids in-place edits of views created inside a
+            # custom Function).
+            if tensor.requires_grad:
+                tensor.register_hook(partial(self._output_grad_hook, weakref.ref(module), path))
+
         # Store records
         if output_records:
             self.storage.append_records(output_records)
 
-    def _backward_hook(self, module: nn.Module, grad_input: tuple, grad_output: tuple):
-        """Hook called during backward pass. Captures gradient tensors."""
-        if self._should_stop():
+    def _output_grad_hook(self, module_ref, path: str, grad: torch.Tensor):
+        """Hook called during backward for one output tensor of a module.
+
+        Registered via ``Tensor.register_hook`` in ``_forward_hook``. Receives the
+        gradient of the loss w.r.t. that specific output tensor.
+        """
+        module = module_ref()
+        if module is None or self._should_stop():
             return
 
         self._backward_count += 1
@@ -183,41 +201,17 @@ class HookEngine:
         frames = capture_current_stack()
         stack_id = self.stack_manager.get_stack_id(frames)
 
-        records = []
-
-        # Process grad_input
-        for idx, grad in enumerate(grad_input or []):
-            if grad is not None and isinstance(grad, torch.Tensor):
-                record = {
-                    "step": self._backward_count,
-                    "hook_type": "backward_grad_input",
-                    "module_name": self._get_module_name(module),
-                    "module_id": id(module),
-                    "tensor_path": f"grad_input[{idx}]",
-                    "stack_id": stack_id,
-                    "summary": safe_compute_summary(grad),
-                    "samples": safe_sample(grad),
-                }
-                records.append(record)
-
-        # Process grad_output
-        for idx, grad in enumerate(grad_output or []):
-            if grad is not None and isinstance(grad, torch.Tensor):
-                record = {
-                    "step": self._backward_count,
-                    "hook_type": "backward_grad_output",
-                    "module_name": self._get_module_name(module),
-                    "module_id": id(module),
-                    "tensor_path": f"grad_output[{idx}]",
-                    "stack_id": stack_id,
-                    "summary": safe_compute_summary(grad),
-                    "samples": safe_sample(grad),
-                }
-                records.append(record)
-
-        # Store records
-        if records:
-            self.storage.append_records(records)
+        record = {
+            "step": self._backward_count,
+            "hook_type": "backward_grad_output",
+            "module_name": self._get_module_name(module),
+            "module_id": id(module),
+            "tensor_path": f"grad_output{path}",
+            "stack_id": stack_id,
+            "summary": safe_compute_summary(grad),
+            "samples": safe_sample(grad),
+        }
+        self.storage.append_records([record])
 
         # Periodic save
         if self._should_save():
@@ -241,13 +235,11 @@ class HookEngine:
         handle1 = module.register_forward_pre_hook(self._forward_pre_hook, with_kwargs=True)
         self._handles.append(handle1)
 
-        # Register forward hook (captures outputs)
+        # Register forward hook (captures outputs). The backward gradient capture
+        # uses per-tensor hooks registered inside _forward_hook (see the comment
+        # there for why nn.Module backward hooks are not usable).
         handle2 = module.register_forward_hook(self._forward_hook)
         self._handles.append(handle2)
-
-        # Register backward hook (captures gradients)
-        handle3 = module.register_full_backward_hook(self._backward_hook)
-        self._handles.append(handle3)
 
         self._hooked_modules.add(module)
 
